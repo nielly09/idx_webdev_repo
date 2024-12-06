@@ -1,0 +1,458 @@
+{% extends "base.html" %}
+
+{% block title %}Homepage{% endblock %}
+
+{% block content %}
+<style>
+    /* Style for TikTok-like UI */
+    body {
+        margin: 0;
+        overflow: hidden;
+        background-color: black;
+        color: white;
+    }
+    .video-container {
+        position: relative;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    video {
+        height: 90vh;
+        width: auto;
+        border-radius: 12px;
+    }
+    .video-info {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        font-size: 18px;
+    }
+    .actions {
+        position: absolute;
+        right: 20px;
+        bottom: 50px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    .actions button {
+        background: none;
+        border: none;
+        margin-bottom: 10px;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+    }
+    .actions span {
+        margin-top: -5px;
+        font-size: 14px;
+        text-align: center;
+    }
+    .comment-form-container {
+        position: absolute;
+        bottom: 10px;
+        left: 20px;
+        width: calc(100% - 40px);
+        background-color: rgba(0, 0, 0, 0.8);
+        border-radius: 8px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .comment-form-container.hidden {
+        display: none;
+    }
+
+    .comment-input {
+        width: 100%;
+        padding: 8px;
+        border: none;
+        border-radius: 4px;
+        background-color: #333;
+        color: white;
+        resize: none;
+    }
+
+    .submit-comment {
+        background-color: #007bff;
+        border: none;
+        padding: 8px 16px;
+        color: white;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .submit-comment:hover {
+        background-color: #0056b3;
+    }
+    .comments-list {
+        max-height: 200px;
+        overflow-y: auto;
+        margin-bottom: 10px;
+    }
+
+    .comment {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px;
+        background-color: #222;
+        margin-bottom: 5px;
+        border-radius: 4px;
+    }
+
+    .delete-comment {
+        background: none;
+        border: none;
+        color: red;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .cancel-comment {
+        background-color: #555;
+        border: none;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: 10px;
+    }
+
+    .cancel-comment:hover {
+        background-color: #333;
+    }
+</style>
+
+<div id="video-wrapper">
+    {% for video in videos %}
+    <div class="video-container" data-index="{{ forloop.counter0 }}" data-id="{{ video.id }}">
+        <video src="{{ video.video_file.url }}" loop></video>
+        <div class="video-info">
+            <p>{{ video.uploader.username }} - {{ video.created_at|date:"M d, Y" }}</p>
+            <p>{{ video.title }}</p>
+        </div>
+        <div class="actions">
+            <button onclick="handleLike({{ video.id }})">
+                <i class="fas fa-heart"></i>
+            </button>
+            <span>{{ video.hearts.count }}</span>
+            <button onclick="console.log('Button clicked'); openComments({{ video.id }})">
+                <i class="fas fa-comment"></i>
+            </button>
+            <span>{{ video.comments.count }}</span>
+        </div>
+        <!-- Comment Form Template -->
+        <div class="comment-form-container hidden" id="comment-form-{{ video.id }}">
+            <div class="comments-list" id="comments-list-{{ video.id }}">
+                <!-- Existing comments will be loaded here dynamically -->
+            </div>
+            <textarea placeholder="Add a comment..." class="comment-input"></textarea>
+            <button class="submit-comment" onclick="submitComment({{ video.id }})">Post</button>
+            <button class="cancel-comment" onclick="hideComments({{ video.id }})">Back</button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+    const userID = JSON.parse(document.getElementById('user_id').textContent);
+    console.log(userID);
+    const csrfToken = getCookie('csrftoken');
+    // JavaScript to handle autoplay and keyboard navigation
+    let currentVideoIndex = 0;
+    const videoContainers = document.querySelectorAll('.video-container');
+
+    let heartsData = [];
+
+    function playVideo(index) {
+        // Pause all videos
+        videoContainers.forEach((container, i) => {
+            const video = container.querySelector('video');
+            if (i === index) {
+                video.play();
+            } else {
+                video.pause();
+                video.currentTime = 0;
+            }
+        });
+    }
+
+    function scrollToVideo(index) {
+        if (index < 0 || index >= videoContainers.length) return;
+        currentVideoIndex = index;
+        videoContainers[currentVideoIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        playVideo(currentVideoIndex);
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+            scrollToVideo(currentVideoIndex + 1);
+        } else if (e.key === 'ArrowUp') {
+            scrollToVideo(currentVideoIndex - 1);
+        }
+    });
+
+    // Initial play
+    scrollToVideo(currentVideoIndex);
+
+    // Utility function to get CSRF token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    // Fetch and update heart data
+    async function fetchHeartsData() {
+        try {
+            const response = await fetch('/api/hearts/');
+            if (!response.ok) {
+                throw new Error('Failed to fetch heart data');
+            }
+            heartsData = await response.json();
+            console.log(heartsData);
+
+            // Update heart counts and colors for each video
+            videoContainers.forEach((container) => {
+                const videoId = parseInt(container.dataset.id, 10);
+                const heartData = heartsData.find((data) => data.video.id === videoId);
+
+                const heartCountSpan = container.querySelector('.actions span:first-of-type');
+                const heartButton = container.querySelector('.actions button:first-of-type');
+
+                if (heartData) {
+                    // Update heart count
+                    if (heartCountSpan) {
+                        heartCountSpan.textContent = heartsData.filter((data) => data.video.id === videoId).length;
+                    }
+
+                    // Update heart color if liked by the current user
+                    if (heartData.user.id === userID) {
+                        heartButton.querySelector('i').style.color = 'red';
+                        heartButton.setAttribute('data-liked', 'true');
+                    } else {
+                        heartButton.querySelector('i').style.color = 'white';
+                        heartButton.setAttribute('data-liked', 'false');
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching hearts data:', error);
+        }
+    }
+
+    async function toggleLike(videoId, isLiked, heartId) {
+        const method = isLiked ? 'DELETE' : 'POST';
+        const url = isLiked ? `/api/hearts/${heartId}/` : '/api/hearts/';
+
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({
+                    user: userID,
+                    video: videoId
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to ${isLiked ? 'unlike' : 'like'} the video`);
+            }
+
+            const updatedHeartData = await fetch('/api/hearts/').then((res) => res.json());
+
+            // Update the global heartsData
+            heartsData = updatedHeartData;
+
+            // Update UI after toggling like/unlike
+            const videoContainer = [...videoContainers].find(
+                (container) => parseInt(container.dataset.id, 10) === videoId
+            );
+
+            if (videoContainer) {
+                const heartCountSpan = videoContainer.querySelector('.actions span:first-of-type');
+                const heartButton = videoContainer.querySelector('.actions button:first-of-type');
+
+                const videoLikes = updatedHeartData.filter((data) => data.video.id === videoId);
+
+                if (heartCountSpan) {
+                    heartCountSpan.textContent = videoLikes.length; // Update like count
+                }
+
+                if (videoLikes.some((like) => like.user.id === userID)) {
+                    heartButton.querySelector('i').style.color = 'red';
+                    heartButton.setAttribute('data-liked', 'true');
+                } else {
+                    heartButton.querySelector('i').style.color = 'white';
+                    heartButton.setAttribute('data-liked', 'false');
+                }
+            }
+        } catch (error) {
+            console.error(`Error toggling like/unlike:`, error);
+        }
+    }
+
+    function handleLike(videoId) {
+        const videoContainer = [...videoContainers].find(
+            (container) => parseInt(container.dataset.id, 10) === videoId
+        );
+
+        if (videoContainer) {
+            const heartButton = videoContainer.querySelector('.actions button:first-of-type');
+            const isLiked = heartButton.getAttribute('data-liked') === 'true';
+            
+            const heartData = heartsData.find((data) => data.video.id === videoId);
+            const heartId = heartData ? heartData.id : null;
+
+            // Call toggleLike with appropriate action
+            toggleLike(videoId, isLiked, heartId);
+        }
+    }
+
+    // Function to open the comment form and fetch filtered comments
+    function openComments(videoId) {
+        // Hide other comment forms
+        document.querySelectorAll('.comment-form-container').forEach((form) => {
+            form.classList.add('hidden');
+        });
+
+        // Show the comment form for the selected video
+        const commentForm = document.getElementById(`comment-form-${videoId}`);
+        if (commentForm) {
+            commentForm.classList.remove('hidden');
+
+            // Fetch and display comments specific to the selected video
+            fetchComments(videoId);
+        }
+    }
+
+    // Function to submit a comment
+    async function submitComment(videoId) {
+        const commentInput = document.querySelector(`#comment-form-${videoId} .comment-input`);
+        if (!commentInput || !commentInput.value.trim()) {
+            alert('Comment cannot be empty!');
+            return;
+        }
+
+        const commentText = commentInput.value.trim();
+
+        try {
+            const response = await fetch('/api/comments/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({
+                    user: userID,
+                    video: videoId,
+                    content: commentText,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to submit comment');
+            }
+
+            // Clear the input after successful submission
+            commentInput.value = '';
+
+            // Optionally, update the comment count in the UI
+            const videoContainer = [...videoContainers].find(
+                (container) => parseInt(container.dataset.id, 10) === videoId
+            );
+            if (videoContainer) {
+                const commentCountSpan = videoContainer.querySelector('.actions span:last-of-type');
+                const updatedComments = await response.json();
+                commentCountSpan.textContent = updatedComments.length;
+            }
+        } catch (error) {
+            console.error('Error submitting comment:', error);
+        }
+    }
+
+    async function fetchComments(videoId) {
+        try {
+            const response = await fetch(`/api/comments/?video=${videoId}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch comments');
+            }
+
+            const comments = await response.json();
+            const commentsList = document.getElementById(`comments-list-${videoId}`);
+
+            // Clear existing comments
+            commentsList.innerHTML = '';
+
+            // Filter comments that belong to the specific video (if server doesn't already filter)
+            const filteredComments = comments.filter(comment => comment.video.id === videoId);
+
+            // Render each comment
+            if (filteredComments.length === 0) {
+                commentsList.innerHTML = '<p>No comments yet.</p>';
+            } else {
+                filteredComments.forEach((comment) => {
+                    const commentDiv = document.createElement('div');
+                    commentDiv.className = 'comment';
+                    commentDiv.innerHTML = `
+                        <span>${comment.user.username}: ${comment.content}</span>
+                        <button class="delete-comment" onclick="deleteComment(${comment.id}, ${videoId})">Delete</button>
+                    `;
+                    commentsList.appendChild(commentDiv);
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching comments:', error);
+        }
+    }
+
+    // Function to delete a comment
+    async function deleteComment(commentId, videoId) {
+        try {
+            const response = await fetch(`/api/comments/${commentId}/`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to delete comment');
+            }
+
+            // Refresh comments list
+            fetchComments(videoId);
+        } catch (error) {
+            console.error('Error deleting comment:', error);
+        }
+    }
+
+    // Function to hide the comment form
+    function hideComments(videoId) {
+        const commentForm = document.getElementById(`comment-form-${videoId}`);
+        commentForm.classList.add('hidden');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchHeartsData();
+    });
+</script>
+{% endblock %}

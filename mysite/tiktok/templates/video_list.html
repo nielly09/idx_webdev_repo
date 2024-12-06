@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Video List{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Uploaded Videos</h1>
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Uploaded By</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for video in videos %}
+        <tr>
+            <td>{{ video.title }}</td>
+            <td>{{ video.uploader }}</td>
+            <td>
+                <a href="{% url 'video_detail' video.id %}" class="btn btn-info btn-sm">View</a>
+                <a href="{% url 'video_update' video.id %}" class="btn btn-warning btn-sm">Edit</a>
+                <a href="{% url 'video_delete' video.id %}" class="btn btn-danger btn-sm">Delete</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
